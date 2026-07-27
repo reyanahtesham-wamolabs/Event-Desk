@@ -4,7 +4,7 @@ import enum
 from sqlalchemy import Column, String, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from .database import Base
 
 
 class NotificationType(str, enum.Enum):
