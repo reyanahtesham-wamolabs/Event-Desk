@@ -31,8 +31,6 @@ class TokenFunctionality:
             if payload.get("type") != "access":
                 return {"status": "login_required"}
             return {"status": "valid", "payload": payload}
-        except jwt.InvalidTokenError:
-            raise
         except jwt.ExpiredSignatureError:
             try:
                 payload = jwt.decode(
@@ -56,6 +54,9 @@ class TokenFunctionality:
             if has_refresh:
                 return {"status": "refresh_required"}
             return {"status": "login_required"}
+        except jwt.InvalidTokenError:
+            raise
+
 
     @staticmethod
     async def create_refresh_token(user_id: str, session) -> str:
