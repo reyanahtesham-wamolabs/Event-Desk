@@ -7,7 +7,7 @@ from app.services.jwt import TokenFunctionality
 from app.core.security import hash_password, check_password
 
 
-class UserAuthenticationServices:
+class EventServices:
     def __init__(self, db_session=None):
         self.session = db_session
 
