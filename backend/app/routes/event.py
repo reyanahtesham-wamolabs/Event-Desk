@@ -14,7 +14,6 @@ from app.dependencies.services import get_event_service
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-# ---- Schemas ----
 
 
 class EventCreate(BaseModel):
@@ -58,7 +57,6 @@ class EventOut(BaseModel):
         from_attributes = True
 
 
-# ---- Routes ----
 
 
 @router.post("", response_model=EventOut, status_code=201)
