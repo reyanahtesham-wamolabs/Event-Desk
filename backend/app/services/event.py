@@ -1,17 +1,22 @@
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.schemas.user import UserCreate, UserLogin
-from app.repositories.user_auth import UserCrud
-from app.services.jwt import TokenFunctionality
-from app.core.security import hash_password, check_password
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.exceptions import AuthorizationError, NotFoundError, ValidationError
+from app.models.event import Event, EventCategory, EventStatus
+from app.models.user import UserRole as Role, User
+from app.repositories.event import EventRepository as events_repo
+from app.repositories.tag import TagRepository as tags_repo
 
-class EventServices:
-    def __init__(self, db_session=None):
+# Statuses an event can never move out of via normal edits
+TERMINAL_STATUSES = {EventStatus.CANCELLED, EventStatus.COMPLETED}
+
+class EventService:
+    def __init__(self, db_session: AsyncSession = None):
         self.session = db_session
 
-    def _get_session(self, session=None):
+    def _get_session(self, session=None) -> AsyncSession:
         sess = session or self.session
         if sess is None:
             raise HTTPException(
@@ -20,82 +25,196 @@ class EventServices:
             )
         return sess
 
-    async def user_signup(self, user_data: UserCreate, session=None):
+    def _assert_owner_or_admin(self, user: User, event: Event) -> None:
+        if user.role == Role.ADMIN:
+            return
+        if event.organizer_id != user.id:
+            raise AuthorizationError("You do not have access to this event")
+
+    def _validate_event_time(self, event_time: datetime) -> None:
+        if event_time <= datetime.now(timezone.utc):
+            raise ValidationError("Event time must be in the future")
+
+    def _validate_total_tickets(self, total_tickets: int) -> None:
+        if total_tickets <= 0:
+            raise ValidationError("Total tickets must be greater than zero")
+
+    async def _validate_tag_ids(self, tag_ids: list[str], session=None) -> None:
         sess = self._get_session(session)
-        if user_data.role=="admin":
-            raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Admin cannot be created",
+        for tag_id in tag_ids:
+            if await tags_repo.get_tag_by_id(sess, tag_id) is None:
+                raise ValidationError(f"Tag '{tag_id}' does not exist")
+
+    async def create_event(
+        self,
+        current_user: User,
+        title: str,
+        event_time: datetime,
+        total_tickets: int,
+        category: EventCategory,
+        description: str | None = None,
+        tag_ids: list[str] | None = None,
+        session=None
+    ) -> Event:
+        """Create a new event, owned by the requesting user."""
+        sess = self._get_session(session)
+        if not title or not title.strip():
+            raise ValidationError("Title is required")
+
+        self._validate_event_time(event_time)
+        self._validate_total_tickets(total_tickets)
+
+        if tag_ids:
+            await self._validate_tag_ids(tag_ids, session=sess)
+
+        return await events_repo.create_event(
+            sess,
+            title=title.strip(),
+            event_time=event_time,
+            total_tickets=total_tickets,
+            category=category,
+            organizer_id=current_user.id,
+            description=description,
+            status=EventStatus.DRAFT,
+            tag_ids=tag_ids,
+        )
+
+    async def get_event(self, event_id: str, session=None) -> Event:
+        sess = self._get_session(session)
+        event = await events_repo.get_event_by_id(sess, event_id)
+        if not event:
+            raise NotFoundError(f"Event '{event_id}' not found")
+        return event
+
+    async def list_published_events(
+        self,
+        category: EventCategory | None = None,
+        tag_name: str | None = None,
+        skip: int = 0,
+        limit: int = 20,
+        session=None
+    ) -> list[Event]:
+        """Publicly viewable events — no ownership restriction, any authenticated user can call this."""
+        sess = self._get_session(session)
+        if skip < 0:
+            raise ValidationError("skip must be >= 0")
+        if limit <= 0 or limit > 100:
+            raise ValidationError("limit must be between 1 and 100")
+
+        return await events_repo.list_events(
+            sess,
+            status=EventStatus.PUBLISHED,
+            category=category,
+            tag_name=tag_name,
+            skip=skip,
+            limit=limit,
+        )
+
+    async def list_my_events(
+        self,
+        current_user: User,
+        status: EventStatus | None = None,
+        skip: int = 0,
+        limit: int = 20,
+        session=None
+    ) -> list[Event]:
+        """Events belonging to the requesting organizer, any status (draft/published/etc)."""
+        sess = self._get_session(session)
+        return await events_repo.list_events(
+            sess,
+            organizer_id=current_user.id,
+            status=status,
+            skip=skip,
+            limit=limit,
+        )
+
+    async def edit_event(
+        self,
+        current_user: User,
+        event_id: str,
+        session=None,
+        **fields,
+    ) -> Event:
+        """
+        Partial update of an event. Only the organizer who owns it, or an admin, may edit.
+        Cancelled or completed events are immutable.
+        """
+        sess = self._get_session(session)
+        event = await self.get_event(event_id, session=sess)
+        self._assert_owner_or_admin(current_user, event)
+
+        if event.status in TERMINAL_STATUSES:
+            raise ValidationError(f"Cannot edit an event that is {event.status.value}")
+
+        fields.pop("organizer_id", None)
+        fields.pop("status", None)
+
+        if "event_time" in fields and fields["event_time"] is not None:
+            self._validate_event_time(fields["event_time"])
+
+        if "total_tickets" in fields and fields["total_tickets"] is not None:
+            new_total = fields["total_tickets"]
+            self._validate_total_tickets(new_total)
+            booked = sum(1 for t in event.tickets if t.status != "cancelled")
+            if new_total < booked:
+                raise ValidationError(
+                    f"Cannot set total_tickets below {booked}, the number already booked"
                 )
-        existing = await UserCrud.get_user_by_email(user_data.email, sess)
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists",
-            )
 
-        hashed_pw = hash_password(user_data.password)
+        if "title" in fields and fields["title"] is not None:
+            if not fields["title"].strip():
+                raise ValidationError("Title cannot be empty")
+            fields["title"] = fields["title"].strip()
 
-        try:
-            created_user = await UserCrud.add_user(
-                name=user_data.name,
-                email=user_data.email,
-                password_hash=hashed_pw,
-                session=sess,
-                role=user_data.role,
-            )
-        except SQLAlchemyError as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create user",
-            ) from e
+        tag_ids = fields.pop("tag_ids", None)
+        updated = await events_repo.update_event(sess, event_id, **fields)
 
-        return {
-            "status": "User created successfully",
-            "user": {
-                "id": created_user.id,
-                "name": created_user.name,
-                "email": created_user.email,
-                "role": created_user.role.value if hasattr(created_user.role, "value") else str(created_user.role),
-            },
-        }
+        if tag_ids is not None:
+            await self._validate_tag_ids(tag_ids, session=sess)
+            updated = await events_repo.set_event_tags(sess, event_id, tag_ids)
 
-    async def user_login(self, user_data: UserLogin, session=None):
+        return updated
+
+    async def publish_event(self, current_user: User, event_id: str, session=None) -> Event:
+        """Move an event from draft to published."""
         sess = self._get_session(session)
+        event = await self.get_event(event_id, session=sess)
+        self._assert_owner_or_admin(current_user, event)
 
-        user = await UserCrud.get_user_by_email(user_data.email, sess)
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-            )
+        if event.status != EventStatus.DRAFT:
+            raise ValidationError(f"Cannot publish an event that is {event.status.value}")
 
-        if not check_password(user_data.password, user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
-            )
+        return await events_repo.update_event(sess, event_id, status=EventStatus.PUBLISHED)
 
-        access_token = TokenFunctionality.create_access_token(user.id)
-        refresh_token = await TokenFunctionality.create_refresh_token(user.id, sess)
-
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-        }
-
-    async def user_logout(self, current_user, session=None):
+    async def cancel_event(self, current_user: User, event_id: str, session=None) -> Event:
+        """
+        Cancel an event. Only the organizer who owns it, or an admin, may cancel.
+        Already-terminal events cannot be cancelled again.
+        """
         sess = self._get_session(session)
-        user_id = getattr(current_user, "id", current_user)
-        return await TokenFunctionality.delete_token(user_id, sess)
+        event = await self.get_event(event_id, session=sess)
+        self._assert_owner_or_admin(current_user, event)
 
-    async def refresh_token(self, refresh_token_str: str, session=None):
+        if event.status in TERMINAL_STATUSES:
+            raise ValidationError(f"Event is already {event.status.value}")
+
+        updated = await events_repo.update_event(sess, event_id, status=EventStatus.CANCELLED)
+        return updated
+
+    async def delete_event(self, current_user: User, event_id: str, session=None) -> None:
+        """
+        Hard delete — restricted to admins, and only for events with no history worth
+        preserving (draft events, or already-cancelled events with no bookings).
+        Prefer cancel_event for anything with attendees.
+        """
         sess = self._get_session(session)
-        result = await TokenFunctionality.refresh_token(refresh_token_str, sess)
-        if result.get("status") == "login_required":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Login required",
+        event = await self.get_event(event_id, session=sess)
+        if current_user.role != Role.ADMIN:
+            raise AuthorizationError("Only admins may permanently delete events")
+
+        if event.tickets:
+            raise ValidationError(
+                "Cannot delete an event with existing bookings — cancel it instead"
             )
-        return result
+
+        await events_repo.delete_event(sess, event_id)
