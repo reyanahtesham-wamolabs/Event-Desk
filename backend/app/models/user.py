@@ -17,6 +17,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column()
     email: Mapped[str] = mapped_column(unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column()
     role: Mapped[UserRole] = mapped_column(default=UserRole.ATTENDEE)
     organized_events: Mapped[list["Event"]] = relationship(back_populates="organizer", foreign_keys="Event.organizer_id")
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="user")
