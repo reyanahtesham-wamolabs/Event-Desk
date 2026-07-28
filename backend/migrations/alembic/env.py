@@ -7,6 +7,11 @@ import asyncio
 
 from alembic import context
 
+from app.models import Base
+
+from dotenv import load_dotenv
+import os
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -18,7 +23,16 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from app.models import Base
+
+load_dotenv()
+
+config = context.config
+config.set_main_option(
+    "sqlalchemy.url",
+    os.getenv("DATABASE_URL")
+)
+
+
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
