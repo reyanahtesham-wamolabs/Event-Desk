@@ -1,11 +1,11 @@
 from pydantic import BaseModel, EmailStr
 from app.models.user import UserRole
-
+from app.utils.validators import password_value,email_value
 
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
-    password: str
+    email: email_value
+    password: password_value
 
 
 class UserLogin(BaseModel):
