@@ -26,7 +26,6 @@ if config.config_file_name is not None:
 
 load_dotenv()
 
-config = context.config
 config.set_main_option(
     "sqlalchemy.url",
     os.getenv("DATABASE_URL")
