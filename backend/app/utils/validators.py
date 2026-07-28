@@ -19,7 +19,7 @@ def check_email(value: str) -> str:
 
     return original_value
 
-def check_password(value: str) -> str:
+def validate_password(value: str) -> str:
     if not PASSWORD_REGEX.match(value):
         raise ValueError(
             f"Password must be at least {MIN_LENGTH} characters long, contain at least one uppercase letter, one lowercase letter, one number, one special character, and must not contain whitespace."
@@ -32,5 +32,5 @@ def check_non_empty_value(value: str) -> str:
     return value
 
 email_value=Annotated[str,AfterValidator(check_email)]
-password_value=Annotated[str,AfterValidator(check_password)]
+password_value=Annotated[str,AfterValidator(validate_password)]
 non_empty_value=Annotated[str,AfterValidator(check_non_empty_value)]

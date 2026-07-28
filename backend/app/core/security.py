@@ -1,12 +1,5 @@
-from datetime import datetime, timedelta, timezone
-from passlib.context import CryptContext
-import jwt
-from app.core.config import settings
 import bcrypt
 
-
-
-MAX_PASSWORD_LENGTH = 20
 
 def hash_password(plainPassword):            
     salt = bcrypt.gensalt()

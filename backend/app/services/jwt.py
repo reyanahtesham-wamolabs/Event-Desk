@@ -31,6 +31,8 @@ class TokenFunctionality:
             if payload.get("type") != "access":
                 return {"status": "login_required"}
             return {"status": "valid", "payload": payload}
+        except jwt.InvalidTokenError:
+            raise
         except jwt.ExpiredSignatureError:
             try:
                 payload = jwt.decode(
@@ -41,7 +43,7 @@ class TokenFunctionality:
                 )
             except jwt.InvalidTokenError:
                 raise
-
+        
             user_id = payload.get("sub")
             if not user_id:
                 return {"status": "login_required"}
@@ -58,11 +60,11 @@ class TokenFunctionality:
     @staticmethod
     async def create_refresh_token(user_id: str, session) -> str:
         existing = await tokenCRUD.get_valid_refresh_token(user_id, session)
-        if existing:
-            return existing.token
-
         expire_time = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-        expire_time = expire_time.replace(tzinfo=None)
+
+        if existing:
+            await tokenCRUD.delete_refresh_token(user_id,session)
+
 
         payload = {
             "sub": str(user_id),

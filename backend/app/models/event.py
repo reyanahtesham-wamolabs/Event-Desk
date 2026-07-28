@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-
+from .enum import EventCategory,EventStatus
 from sqlalchemy import ForeignKey, Table, Column, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,19 +24,6 @@ class Tag(Base):
     events: Mapped[list["Event"]] = relationship(secondary=event_tags, back_populates="tags")
 
 
-class EventCategory(str, enum.Enum):
-    MUSIC = "music"
-    SPORTS = "sports"
-    CONFERENCE = "conference"
-    THEATER = "theater"
-    OTHER = "other"
-
-
-class EventStatus(str, enum.Enum):
-    DRAFT = "draft"
-    PUBLISHED = "published"
-    CANCELLED = "cancelled"
-    COMPLETED = "completed"
 
 
 class Event(Base):

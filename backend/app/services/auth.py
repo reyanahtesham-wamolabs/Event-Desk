@@ -5,7 +5,7 @@ from app.schemas.user import UserCreate, UserLogin
 from app.repositories.user_auth import UserCrud
 from app.services.jwt import TokenFunctionality
 from app.core.security import hash_password, check_password
-
+from app.repositories.user_auth import UserRpo
 
 class UserAuthenticationServices:
     def __init__(self, db_session=None):

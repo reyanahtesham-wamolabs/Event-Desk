@@ -1,18 +1,11 @@
 import uuid
 import enum
-
+from .enum import ChangeType
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
-
-class ChangeType(str, enum.Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-    LOGIN = "login"
-    LOGOUT = "logout"
 
 
 class AuditLog(Base):
