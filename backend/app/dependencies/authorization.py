@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
 from app.services.jwt import TokenFunctionality
-from app.repositories.user import UserRepository
 from app.models.user import User
 
 security = HTTPBearer()
