@@ -32,7 +32,13 @@ class TagRepository():
         tag = await TagRepository.get_tag_by_name(session, name)
         if tag:
             return tag
-        return await TagRepository.create_tag(session, name)
+        try:
+            return await TagRepository.create_tag(session, name)
+        except ValueError:
+            tag = await TagRepository.get_tag_by_name(session, name)
+            if tag is not None:
+                return tag
+            raise
 
 
     async def list_tags(

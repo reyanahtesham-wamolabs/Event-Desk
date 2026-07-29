@@ -6,7 +6,8 @@ from app.schemas.ticket import (
     TicketResponse,
     TicketUpdate,
 )
-from app.dependencies.authorization import get_current_user
+from app.core.permissions import Permission
+from app.dependencies.authorization import get_current_user,require_permission
 from app.models.user import User
 from app.dependencies.services import get_ticket_service
 from app.utils.exceptions import NotFoundError, ConflictError
@@ -66,7 +67,7 @@ async def cancel_ticket(
 async def update_ticket(
     ticket_id: str,
     payload: TicketUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.CANCEL_EVENT)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     try:
@@ -79,7 +80,7 @@ async def update_ticket(
 @router.delete("/{ticket_id}", status_code=204)
 async def delete_ticket(
     ticket_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.CANCEL_EVENT)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     try:

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.exceptions import AuthorizationError, NotFoundError, ValidationError
@@ -88,22 +89,37 @@ class EventService:
             status=EventStatus.DRAFT,
             tag_ids=tag_ids,
         )
-        await self.ticket_service.create_tickets_bulk(
-            event.id, gold_ticket_count, TicketTier.GOLD, gold_ticket_price
-        )
-        await self.ticket_service.create_tickets_bulk(
-            event.id, bronze_ticket_count, TicketTier.BRONZE, bronze_ticket_price
-        )
-        await self.ticket_service.create_tickets_bulk(
-            event.id, silver_ticket_count, TicketTier.SILVER, silver_ticket_price
-        )
+
+        try:
+            await self.ticket_service.create_tickets_bulk(
+                event.id, gold_ticket_count, TicketTier.GOLD, gold_ticket_price
+            )
+            await self.ticket_service.create_tickets_bulk(
+                event.id, bronze_ticket_count, TicketTier.BRONZE, bronze_ticket_price
+            )
+            await self.ticket_service.create_tickets_bulk(
+                event.id, silver_ticket_count, TicketTier.SILVER, silver_ticket_price
+            )
+        except Exception:
+            # Explicit compensation on partial failure
+            await events_repo.delete_event(sess, event.id)
+            raise
+
+        # Reload the event so the newly created tickets are attached
+        await sess.refresh(event, attribute_names=["tickets"])
         return event
 
-    async def get_event(self, event_id: str, session=None) -> Event:
+    async def get_event(self, event_id: str, current_user: User | None = None, session=None) -> Event:
         sess = self._get_session(session)
         event = await events_repo.get_event_by_id(sess, event_id)
         if not event:
             raise NotFoundError(f"Event '{event_id}' not found")
+            
+        if event.status != EventStatus.PUBLISHED:
+            # If not published, only the organizer or an admin can see it.
+            if not current_user or (current_user.role != Role.ADMIN and event.organizer_id != current_user.id):
+                raise NotFoundError(f"Event '{event_id}' not found")
+                
         return event
 
     async def list_published_events(
@@ -155,7 +171,7 @@ class EventService:
     ) -> Event:
 
         sess = self._get_session(session)
-        event = await self.get_event(event_id, session=sess)
+        event = await self.get_event(event_id, current_user=current_user, session=sess)
         self._event_owner(current_user, event)
 
         if event.status in TERMINAL_STATUSES:
@@ -182,10 +198,13 @@ class EventService:
             fields["title"] = fields["title"].strip()
 
         tag_ids = fields.pop("tag_ids", None)
-        updated = await events_repo.update_event(sess, event_id, **fields)
 
         if tag_ids is not None:
             await self._validate_tag_ids(tag_ids, session=sess)
+
+        updated = await events_repo.update_event(sess, event_id, **fields)
+
+        if tag_ids is not None:
             updated = await events_repo.set_event_tags(sess, event_id, tag_ids)
 
         return updated
@@ -194,7 +213,7 @@ class EventService:
         self, current_user: User, event_id: str, session=None
     ) -> Event:
         sess = self._get_session(session)
-        event = await self.get_event(event_id, session=sess)
+        event = await self.get_event(event_id, current_user=current_user, session=sess)
         self._event_owner(current_user, event)
 
         if event.status != EventStatus.DRAFT:
@@ -211,20 +230,35 @@ class EventService:
     ) -> Event:
 
         sess = self._get_session(session)
-        event = await self.get_event(event_id, session=sess)
+        event = await self.get_event(event_id, current_user=current_user, session=sess)
         self._event_owner(current_user, event)
 
         if event.status in TERMINAL_STATUSES:
             raise ValidationError(f"Event is already {event.status.value}")
 
+        # Acquire an explicit row lock on the event BEFORE releasing tickets.
+        # This is the same lock the claim methods acquire first, so cancel_event
+        # and any concurrent purchase are fully serialised at the DB level:
+        # whichever transaction grabs this lock first wins.
+        locked_event_stmt = (
+            select(Event)
+            .where(Event.id == event_id)
+            .with_for_update()
+        )
+        locked_result = await sess.execute(locked_event_stmt)
+        locked_event = locked_result.scalar_one()
+
+        # Re-check status under the lock in case another request changed it
+        # between the initial read and acquiring the lock.
+        if locked_event.status in TERMINAL_STATUSES:
+            raise ValidationError(f"Event is already {locked_event.status.value}")
+
         # Update event status and release all booked tickets in one transaction.
-        # We set the attribute directly and call release_all_by_event (which does
-        # its own UPDATE but intentionally skips the commit), then commit once.
-        event.status = EventStatus.CANCELLED
+        locked_event.status = EventStatus.CANCELLED
         await self.ticket_service.release_all_by_event(event_id, commit=False)
         await sess.commit()
-        await sess.refresh(event, attribute_names=["tags", "tickets"])
-        return event
+        await sess.refresh(locked_event, attribute_names=["tags", "tickets"])
+        return locked_event
 
     async def delete_event(
         self, current_user: User, event_id: str, session=None
@@ -235,7 +269,7 @@ class EventService:
         Prefer cancel_event for anything with attendees.
         """
         sess = self._get_session(session)
-        event = await self.get_event(event_id, session=sess)
+        event = await self.get_event(event_id, current_user=current_user, session=sess)
         if current_user.role != Role.ADMIN:
             raise AuthorizationError("Only admins may permanently delete events")
 

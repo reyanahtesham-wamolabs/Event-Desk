@@ -23,8 +23,6 @@ from app.utils.exceptions import NotFoundError, ConflictError
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-# ── Event CRUD ────────────────────────────────────────────────────────────────
-
 @router.post("", response_model=EventResponse, status_code=201)
 async def create_event(
     payload: EventCreate,
@@ -117,6 +115,7 @@ async def create_ticket(
     user: User = Depends(require_permission(Permission.EDIT_EVENT)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
+    
     """Add a single ticket to an existing event (organizer/admin only)."""
     return await ticket_service.create_ticket(
         event_id=event_id,
@@ -133,7 +132,6 @@ async def create_tickets_bulk(
     user: User = Depends(require_permission(Permission.EDIT_EVENT)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
-    """Bulk-add tickets to an existing event (organizer/admin only)."""
     tickets = []
     for t in payload.tickets:
         ticket = await ticket_service.create_ticket(
@@ -153,7 +151,6 @@ async def list_event_tickets(
     user: User = Depends(get_current_user),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
-    """List all tickets for an event, optionally filtered by tier."""
     return await ticket_service.list_event_tickets(event_id, tier=tier)
 
 
@@ -164,7 +161,6 @@ async def list_available_tickets(
     user: User = Depends(get_current_user),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
-    """List unclaimed tickets for an event, optionally filtered by tier."""
     return await ticket_service.list_available_tickets(event_id, tier=tier)
 
 
@@ -175,7 +171,6 @@ async def available_count(
     user: User = Depends(get_current_user),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
-    """Return the number of unclaimed tickets for an event."""
     count = await ticket_service.available_count(event_id, tier=tier)
     return AvailableCountResponse(event_id=event_id, tier=tier, available=count)
 
@@ -187,7 +182,6 @@ async def purchase_any_available(
     user: User = Depends(require_permission(Permission.BOOK_TICKET)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
-    """Claim any available ticket of the given tier for the authenticated user."""
     try:
         return await ticket_service.purchase_any_available(event_id, payload.tier, user.id)
     except NotFoundError as e:
