@@ -38,7 +38,7 @@ class TagRepository():
     async def list_tags(
         session: AsyncSession, skip: int = 0, limit: int = 100
     ) -> list[Tag]:
-        result = await session.execute(select(Tag).offset(skip).limit(limit))
+        result = await session.execute(select(Tag).order_by(Tag.name).offset(skip).limit(limit))
         return list(result.scalars().all())
 
 

@@ -93,7 +93,6 @@ class EventService:
         limit: int = 20,
         session=None
     ) -> list[Event]:
-        """Publicly viewable events — no ownership restriction, any authenticated user can call this."""
         sess = self._get_session(session)
         if skip < 0:
             raise ValidationError("skip must be >= 0")
@@ -117,7 +116,6 @@ class EventService:
         limit: int = 20,
         session=None
     ) -> list[Event]:
-        """Events belonging to the requesting organizer, any status (draft/published/etc)."""
         sess = self._get_session(session)
         return await events_repo.list_events(
             sess,
@@ -127,19 +125,51 @@ class EventService:
             limit=limit,
         )
 
-        tag_ids = fields.pop("tag_ids", None)
-        if tag_ids is not None:
-            await self._validate_tag_ids(tag_ids, session=sess)
+    async def edit_event(
+        self,
+        current_user: User,
+        event_id: str,
+        session=None,
+        **fields,
+    ) -> Event:
+        
+        sess = self._get_session(session)
+        event = await self.get_event(event_id, session=sess)
+        self._event_owner(current_user, event)
 
+        if event.status in TERMINAL_STATUSES:
+            raise ValidationError(f"Cannot edit an event that is {event.status.value}")
+
+        fields.pop("organizer_id", None)
+        fields.pop("status", None)
+
+        if "event_time" in fields and fields["event_time"] is not None:
+            self._validate_event_time(fields["event_time"])
+
+        if "total_tickets" in fields and fields["total_tickets"] is not None:
+            new_total = fields["total_tickets"]
+            self._validate_total_tickets(new_total)
+            booked = sum(1 for t in event.tickets if t.status != "cancelled")
+            if new_total < booked:
+                raise ValidationError(
+                    f"Cannot set total_tickets below {booked}, the number already booked"
+                )
+
+        if "title" in fields and fields["title"] is not None:
+            if not fields["title"].strip():
+                raise ValidationError("Title cannot be empty")
+            fields["title"] = fields["title"].strip()
+
+        tag_ids = fields.pop("tag_ids", None)
         updated = await events_repo.update_event(sess, event_id, **fields)
 
         if tag_ids is not None:
+            await self._validate_tag_ids(tag_ids, session=sess)
             updated = await events_repo.set_event_tags(sess, event_id, tag_ids)
 
         return updated
 
     async def publish_event(self, current_user: User, event_id: str, session=None) -> Event:
-        """Move an event from draft to published."""
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
         self._event_owner(current_user, event)
@@ -150,6 +180,7 @@ class EventService:
         return await events_repo.update_event(sess, event_id, status=EventStatus.PUBLISHED)
 
     async def cancel_event(self, current_user: User, event_id: str, session=None) -> Event:
+        
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
         self._event_owner(current_user, event)
@@ -161,6 +192,11 @@ class EventService:
         return updated
 
     async def delete_event(self, current_user: User, event_id: str, session=None) -> None:
+        """
+        Hard delete — restricted to admins, and only for events with no history worth
+        preserving (draft events, or already-cancelled events with no bookings).
+        Prefer cancel_event for anything with attendees.
+        """
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
         if current_user.role != Role.ADMIN:

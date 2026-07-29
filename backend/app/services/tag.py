@@ -23,6 +23,10 @@ class TagService:
         if user.role != Role.ADMIN:
             raise AuthorizationError("Only admins may manage tags")
 
+    def _assert_admin_or_organizer(self, user: User) -> None:
+        if user.role == Role.ATTENDEE :
+            raise AuthorizationError("Attendees may not manage tags")
+
     def _normalize(self, name: str) -> str:
         name = name.strip().lower()
         if not name:
@@ -33,7 +37,7 @@ class TagService:
 
     async def create_tag(self, current_user: User, name: str, session=None):
         sess = self._get_session(session)
-        self._assert_admin(current_user)
+        self._assert_admin_or_organizer(current_user)
         name = self._normalize(name)
         try:
             return await tags_repo.create_tag(sess, name)
@@ -42,7 +46,6 @@ class TagService:
 
     async def list_tags(self, skip: int = 0, limit: int = 100, session=None):
         sess = self._get_session(session)
-        # Read-only, no restriction — any authenticated user can see available tags
         return await tags_repo.list_tags(sess, skip=skip, limit=limit)
 
     async def update_tag(self, current_user: User, tag_id: str, name: str, session=None):

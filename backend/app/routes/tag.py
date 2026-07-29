@@ -22,7 +22,6 @@ async def create_tag(
     user: User = Depends(get_current_user),
     tags_service:TagService=Depends(get_tag_service)
 ):
-    """Admin check happens inside the service — tags have no dedicated permission enum entry."""
     return await tags_service.create_tag( user, payload.name)
 
 

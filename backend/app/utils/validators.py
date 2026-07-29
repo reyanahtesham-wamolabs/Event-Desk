@@ -30,7 +30,7 @@ def check_non_empty_value(value: str) -> str:
     if not value.strip():
         raise ValueError("Cannot accept empty string")
     return value
-def validate_event_time(cls, value: datetime) -> datetime:
+def validate_event_time(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("event_time must include a timezone offset")
 
