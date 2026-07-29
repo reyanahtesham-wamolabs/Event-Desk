@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
 from app.services.jwt import TokenFunctionality
-from app.repositories.user import UserRepository
 from app.models.user import User
 from app.core.permissions import Permission,ROLE_PERMISSIONS
 security = HTTPBearer()
@@ -44,8 +43,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_repo = UserRepository(session)
-    user = await user_repo.get_user_by_id(user_id)
+    user_repo = UserCrud
+    user = await user_repo.get_user_by_id(user_id,session)
 
     if user is None:
         raise HTTPException(

@@ -4,13 +4,7 @@ import enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
-
-
-class UserRole(str, enum.Enum):
-    ADMIN = "admin"
-    ORGANIZER = "organizer"
-    ATTENDEE = "attendee"
-
+from .enum import UserRole
 
 class User(Base):
     __tablename__ = "users"
