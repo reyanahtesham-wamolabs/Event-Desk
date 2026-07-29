@@ -1,17 +1,29 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies.authorization import get_current_user, require_permission
 from app.models.event import EventCategory, EventStatus
+from app.models.enum import TicketTier
 from app.models.user import User
 from app.core.permissions import Permission
 from app.services.event import EventService
-from app.dependencies.services import get_event_service
-from app.schemas.event import EventCreate,EventResponse,EventUpdate
+from app.services.ticket import TicketService
+from app.dependencies.services import get_event_service, get_ticket_service
+from app.schemas.event import EventCreate, EventResponse, EventUpdate
+from app.schemas.ticket import (
+    TicketCreate,
+    TicketBulkCreate,
+    TicketResponse,
+    PurchaseAnyRequest,
+    AvailableCountResponse,
+)
+from app.utils.exceptions import NotFoundError, ConflictError
 
 router = APIRouter(prefix="/events", tags=["events"])
 
+
+# ── Event CRUD ────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=EventResponse, status_code=201)
 async def create_event(
@@ -94,3 +106,91 @@ async def delete_event(
     events_service: EventService = Depends(get_event_service),
 ):
     await events_service.delete_event(user, event_id)
+
+
+# ── Event-scoped Ticket Sub-routes ────────────────────────────────────────────
+
+@router.post("/{event_id}/tickets", response_model=TicketResponse, status_code=201)
+async def create_ticket(
+    event_id: str,
+    payload: TicketCreate,
+    user: User = Depends(require_permission(Permission.EDIT_EVENT)),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """Add a single ticket to an existing event (organizer/admin only)."""
+    return await ticket_service.create_ticket(
+        event_id=event_id,
+        seat_num=payload.seat_num,
+        ticket_tier=payload.ticket_tier,
+        price=payload.price,
+    )
+
+
+@router.post("/{event_id}/tickets/bulk", response_model=list[TicketResponse], status_code=201)
+async def create_tickets_bulk(
+    event_id: str,
+    payload: TicketBulkCreate,
+    user: User = Depends(require_permission(Permission.EDIT_EVENT)),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """Bulk-add tickets to an existing event (organizer/admin only)."""
+    tickets = []
+    for t in payload.tickets:
+        ticket = await ticket_service.create_ticket(
+            event_id=event_id,
+            seat_num=t.seat_num,
+            ticket_tier=t.ticket_tier,
+            price=t.price,
+        )
+        tickets.append(ticket)
+    return tickets
+
+
+@router.get("/{event_id}/tickets", response_model=list[TicketResponse])
+async def list_event_tickets(
+    event_id: str,
+    tier: TicketTier | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """List all tickets for an event, optionally filtered by tier."""
+    return await ticket_service.list_event_tickets(event_id, tier=tier)
+
+
+@router.get("/{event_id}/tickets/available", response_model=list[TicketResponse])
+async def list_available_tickets(
+    event_id: str,
+    tier: TicketTier | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """List unclaimed tickets for an event, optionally filtered by tier."""
+    return await ticket_service.list_available_tickets(event_id, tier=tier)
+
+
+@router.get("/{event_id}/tickets/available/count", response_model=AvailableCountResponse)
+async def available_count(
+    event_id: str,
+    tier: TicketTier | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """Return the number of unclaimed tickets for an event."""
+    count = await ticket_service.available_count(event_id, tier=tier)
+    return AvailableCountResponse(event_id=event_id, tier=tier, available=count)
+
+
+@router.post("/{event_id}/purchase-any", response_model=TicketResponse)
+async def purchase_any_available(
+    event_id: str,
+    payload: PurchaseAnyRequest,
+    user: User = Depends(require_permission(Permission.BOOK_TICKET)),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    """Claim any available ticket of the given tier for the authenticated user."""
+    try:
+        return await ticket_service.purchase_any_available(event_id, payload.tier, user.id)
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ConflictError as e:
+        raise HTTPException(409, str(e))

@@ -170,7 +170,7 @@ class EventService:
         if "total_tickets" in fields and fields["total_tickets"] is not None:
             new_total = fields["total_tickets"]
             self._validate_total_tickets(new_total)
-            booked = sum(1 for t in event.tickets if t.status != "cancelled")
+            booked = sum(1 for t in event.tickets if t.user_id is not None)
             if new_total < booked:
                 raise ValidationError(
                     f"Cannot set total_tickets below {booked}, the number already booked"
@@ -217,10 +217,14 @@ class EventService:
         if event.status in TERMINAL_STATUSES:
             raise ValidationError(f"Event is already {event.status.value}")
 
-        updated = await events_repo.update_event(
-            sess, event_id, status=EventStatus.CANCELLED
-        )
-        return updated
+        # Update event status and release all booked tickets in one transaction.
+        # We set the attribute directly and call release_all_by_event (which does
+        # its own UPDATE but intentionally skips the commit), then commit once.
+        event.status = EventStatus.CANCELLED
+        await self.ticket_service.release_all_by_event(event_id, commit=False)
+        await sess.commit()
+        await sess.refresh(event, attribute_names=["tags", "tickets"])
+        return event
 
     async def delete_event(
         self, current_user: User, event_id: str, session=None

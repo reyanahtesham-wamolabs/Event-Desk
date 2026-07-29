@@ -11,10 +11,6 @@ class NotFoundError(AppException):
     def __init__(self, message: str = "Resource not found"):
         super().__init__(message, status_code=404)
 
-class ConflictError(AppException):
-    def __init__(self, message: str = "Conflict in getting resource"):
-        super().__init__(message, status_code=409)
-
 
 class PermissionDeniedError(AppException):
     def __init__(self, message: str = "You do not have permission to perform this action"):

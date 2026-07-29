@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from app.models.enum import TicketTier
 
 
-class TicketOut(BaseModel):
+class TicketResponse(BaseModel):
     id: str
     seat_num: int
     ticket_tier: TicketTier
@@ -15,7 +15,6 @@ class TicketOut(BaseModel):
 
 
 class TicketCreate(BaseModel):
-    event_id: str
     seat_num: int
     ticket_tier: TicketTier
     price: int
@@ -35,7 +34,7 @@ class PurchaseAnyRequest(BaseModel):
     tier: TicketTier
 
 
-class AvailableCountOut(BaseModel):
+class AvailableCountResponse(BaseModel):
     event_id: str
     tier: TicketTier | None
     available: int
