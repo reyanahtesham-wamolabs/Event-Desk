@@ -13,6 +13,7 @@ class Permission(str, Enum):
     EDIT_EVENT = "edit_event"
     CANCEL_EVENT = "cancel_event"
     VIEW_PUBLISHED_EVENTS = "view_published_events"
+    DELETE_EVENT="delete_event"
 
     BOOK_TICKET = "book_ticket"
     CANCEL_BOOKING = "cancel_booking"

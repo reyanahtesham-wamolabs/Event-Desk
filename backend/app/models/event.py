@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Table, Column, String
+from sqlalchemy import ForeignKey, Table, Column, String,DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -45,7 +45,7 @@ class Event(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column()
     description: Mapped[str | None] = mapped_column()
-    event_time: Mapped[datetime] = mapped_column()
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     total_tickets: Mapped[int] = mapped_column()
     tags: Mapped[list["Tag"]] = relationship(secondary=event_tags, back_populates="events")
     category: Mapped[EventCategory] = mapped_column()

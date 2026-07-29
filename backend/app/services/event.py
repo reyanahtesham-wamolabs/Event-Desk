@@ -25,9 +25,9 @@ class EventService:
             )
         return sess
 
-    def _assert_owner_or_admin(self, user: User, event: Event) -> None:
-        if user.role == Role.ADMIN:
-            return
+    def _event_owner(self, user: User, event: Event) -> None:
+        if user.role==Role.ADMIN:
+            return 
         if event.organizer_id != user.id:
             raise AuthorizationError("You do not have access to this event")
 
@@ -56,7 +56,6 @@ class EventService:
         tag_ids: list[str] | None = None,
         session=None
     ) -> Event:
-        """Create a new event, owned by the requesting user."""
         sess = self._get_session(session)
         if not title or not title.strip():
             raise ValidationError("Title is required")
@@ -141,7 +140,7 @@ class EventService:
         """
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
-        self._assert_owner_or_admin(current_user, event)
+        self._event_owner(current_user, event)
 
         if event.status in TERMINAL_STATUSES:
             raise ValidationError(f"Cannot edit an event that is {event.status.value}")
@@ -179,7 +178,7 @@ class EventService:
         """Move an event from draft to published."""
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
-        self._assert_owner_or_admin(current_user, event)
+        self._event_owner(current_user, event)
 
         if event.status != EventStatus.DRAFT:
             raise ValidationError(f"Cannot publish an event that is {event.status.value}")
@@ -187,13 +186,9 @@ class EventService:
         return await events_repo.update_event(sess, event_id, status=EventStatus.PUBLISHED)
 
     async def cancel_event(self, current_user: User, event_id: str, session=None) -> Event:
-        """
-        Cancel an event. Only the organizer who owns it, or an admin, may cancel.
-        Already-terminal events cannot be cancelled again.
-        """
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
-        self._assert_owner_or_admin(current_user, event)
+        self._event_owner(current_user, event)
 
         if event.status in TERMINAL_STATUSES:
             raise ValidationError(f"Event is already {event.status.value}")
@@ -202,11 +197,6 @@ class EventService:
         return updated
 
     async def delete_event(self, current_user: User, event_id: str, session=None) -> None:
-        """
-        Hard delete — restricted to admins, and only for events with no history worth
-        preserving (draft events, or already-cancelled events with no bookings).
-        Prefer cancel_event for anything with attendees.
-        """
         sess = self._get_session(session)
         event = await self.get_event(event_id, session=sess)
         if current_user.role != Role.ADMIN:
