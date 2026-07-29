@@ -9,6 +9,7 @@ from app.core.permissions import Permission
 from app.services.event import EventService
 from app.dependencies.services import get_event_service
 from app.schemas.event import EventCreate,EventResponse,EventUpdate
+
 router = APIRouter(prefix="/events", tags=["events"])
 
 

@@ -2,20 +2,19 @@ import uuid
 from typing import Sequence
 
 from sqlalchemy import select, update, func
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import NoResultFound
 
 from app.models.tickets import Ticket
 from app.models.enum import TicketTier
-from app.utils.exceptions import NotFoundError,ConflictError
+from app.utils.exceptions import NotFoundError, ConflictError
 
 
 class TicketRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-
-    def create(
+    async def create(
         self,
         *,
         event_id: str,
@@ -30,15 +29,14 @@ class TicketRepository:
             seat_num=seat_num,
             ticket_tier=ticket_tier,
             price=price,
-            user_id=user_id,
+            user_id=None,
         )
         self.db.add(ticket)
-        self.db.commit()
-        self.db.refresh(ticket)
+        await self.db.commit()
+        await self.db.refresh(ticket)
         return ticket
 
-    def bulk_create(self, tickets: list[dict]) -> list[Ticket]:
-        """Bulk-insert tickets when setting up an event's inventory."""
+    async def bulk_create(self, tickets: list[dict]) -> list[Ticket]:
         objs = [
             Ticket(
                 id=str(uuid.uuid4()),
@@ -46,28 +44,33 @@ class TicketRepository:
                 seat_num=t["seat_num"],
                 ticket_tier=t["ticket_tier"],
                 price=t["price"],
-                user_id=t.get("user_id"),
+                user_id=None,
             )
             for t in tickets
         ]
-        self.db.add_all(objs)
-        self.db.commit()
+        try:
+            self.db.add_all(objs)
+            await self.db.commit()
+        except Exception as e:
+            raise e
         return objs
 
-
-    def get(self, ticket_id: str) -> Ticket:
-        ticket = self.db.get(Ticket, ticket_id)
+    async def get(self, ticket_id: str) -> Ticket:
+        ticket = await self.db.get(Ticket, ticket_id)
         if not ticket:
             raise NotFoundError(f"Ticket {ticket_id} not found")
         return ticket
 
-    def get_by_event(self, event_id: str, tier: TicketTier | None = None) -> Sequence[Ticket]:
+    async def get_by_event(
+        self, event_id: str, tier: TicketTier | None = None
+    ) -> Sequence[Ticket]:
         stmt = select(Ticket).where(Ticket.event_id == event_id)
         if tier is not None:
             stmt = stmt.where(Ticket.ticket_tier == tier)
-        return self.db.execute(stmt).scalars().all()
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_available_by_event(
+    async def get_available_by_event(
         self, event_id: str, tier: TicketTier | None = None
     ) -> Sequence[Ticket]:
         stmt = select(Ticket).where(
@@ -75,33 +78,28 @@ class TicketRepository:
         )
         if tier is not None:
             stmt = stmt.where(Ticket.ticket_tier == tier)
-        return self.db.execute(stmt).scalars().all()
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_by_user(self, user_id: str) -> Sequence[Ticket]:
+    async def get_by_user(self, user_id: str) -> Sequence[Ticket]:
         stmt = select(Ticket).where(Ticket.user_id == user_id)
-        return self.db.execute(stmt).scalars().all()
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def count_available(self, event_id: str, tier: TicketTier | None = None) -> int:
-        stmt = select(func.count()).select_from(Ticket).where(
-            Ticket.event_id == event_id, Ticket.user_id.is_(None)
+    async def count_available(self, event_id: str, tier: TicketTier | None = None) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.event_id == event_id, Ticket.user_id.is_(None))
         )
         if tier is not None:
             stmt = stmt.where(Ticket.ticket_tier == tier)
-        return self.db.execute(stmt).scalar_one()
+        result = await self.db.execute(stmt)
+        return result.scalar_one()
 
-    # ---------- CONCURRENCY-SAFE CLAIM OPERATIONS ----------
-
-    def claim_any_available(
+    async def claim_any_available(
         self, event_id: str, tier: TicketTier, user_id: str
     ) -> Ticket:
-        """
-        Atomically grab ONE available seat of the given tier for this event.
-        Uses SELECT ... FOR UPDATE SKIP LOCKED so concurrent requests each
-        lock a different row instead of queuing behind each other.
-
-        Caller must not already be inside a transaction that they intend
-        to hold open indefinitely — commit/rollback happens here.
-        """
         try:
             stmt = (
                 select(Ticket)
@@ -113,7 +111,8 @@ class TicketRepository:
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
-            ticket = self.db.execute(stmt).scalars().first()
+            result = await self.db.execute(stmt)
+            ticket = result.scalars().first()
 
             if ticket is None:
                 raise ConflictError(
@@ -121,65 +120,53 @@ class TicketRepository:
                 )
 
             ticket.user_id = user_id
-            self.db.commit()
-            self.db.refresh(ticket)
+            await self.db.commit()
+            await self.db.refresh(ticket)
             return ticket
         except Exception:
-            self.db.rollback()
+            await self.db.rollback()
             raise
 
-    def claim_specific(self, ticket_id: str, user_id: str) -> Ticket:
-        """
-        Atomically claim a SPECIFIC seat (e.g. user picked seat #14).
-        Uses a conditional UPDATE so the DB does the compare-and-swap —
-        if two requests race for the same seat, only one row is affected.
-        """
+    async def claim_specific(self, ticket_id: str, user_id: str) -> Ticket:
         stmt = (
             update(Ticket)
             .where(Ticket.id == ticket_id, Ticket.user_id.is_(None))
             .values(user_id=user_id)
         )
-        result = self.db.execute(stmt)
+        result = await self.db.execute(stmt)
 
         if result.rowcount == 0:
-            self.db.rollback()
-            # Distinguish "doesn't exist" from "already taken"
-            if self.db.get(Ticket, ticket_id) is None:
+            await self.db.rollback()
+            if await self.db.get(Ticket, ticket_id) is None:
                 raise NotFoundError(f"Ticket {ticket_id} not found")
             raise ConflictError(f"Ticket {ticket_id} already claimed")
 
-        self.db.commit()
-        return self.get(ticket_id)
+        await self.db.commit()
+        return await self.get(ticket_id)
 
-    def release(self, ticket_id: str) -> Ticket:
-        """Release a ticket back to available (cancellation, expired hold, etc.)."""
-        stmt = (
-            update(Ticket)
-            .where(Ticket.id == ticket_id)
-            .values(user_id=None)
-        )
-        result = self.db.execute(stmt)
+    async def release(self, ticket_id: str) -> Ticket:
+        """Release a ticket back to available (cancellation)."""
+        stmt = update(Ticket).where(Ticket.id == ticket_id).values(user_id=None)
+        result = await self.db.execute(stmt)
         if result.rowcount == 0:
-            self.db.rollback()
+            await self.db.rollback()
             raise NotFoundError(f"Ticket {ticket_id} not found")
-        self.db.commit()
-        return self.get(ticket_id)
+        await self.db.commit()
+        return await self.get(ticket_id)
 
-
-    def update(self, ticket_id: str, **fields) -> Ticket:
-        ticket = self.get(ticket_id)
+    async def update(self, ticket_id: str, **fields) -> Ticket:
+        ticket = await self.get(ticket_id)
         for key, value in fields.items():
             if not hasattr(ticket, key):
                 raise ValueError(f"Invalid field: {key}")
             setattr(ticket, key, value)
-        self.db.commit()
-        self.db.refresh(ticket)
+        await self.db.commit()
+        await self.db.refresh(ticket)
         return ticket
 
-
-    def delete(self, ticket_id: str) -> None:
-        ticket = self.db.get(Ticket, ticket_id)
+    async def delete(self, ticket_id: str) -> None:
+        ticket = await self.db.get(Ticket, ticket_id)
         if not ticket:
             raise NotFoundError(f"Ticket {ticket_id} not found")
-        self.db.delete(ticket)
-        self.db.commit()
+        await self.db.delete(ticket)
+        await self.db.commit()

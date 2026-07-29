@@ -1,16 +1,22 @@
-from pydantic import BaseModel,field_validator
+from pydantic import BaseModel
 from app.utils.validators import datetime_with_timezone
 from app.models.event import EventCategory, EventStatus
-from app.services.event import EventService
-from datetime import datetime,UTC
+from datetime import datetime
+from app.models.enum import TicketTier
 from .tag import TagResponse
 class EventCreate(BaseModel):
     title: str
     description: str | None = None
     event_time: datetime_with_timezone
-    total_tickets: int
     category: EventCategory
     tag_ids: list[str] | None = None
+    gold_ticket_count:int
+    gold_ticket_price:int
+    silver_ticket_count:int
+    silver_ticket_price:int
+    bronze_ticket_count:int
+    bronze_ticket_price:int
+    
 
 class EventUpdate(BaseModel):
     title: str | None = None
@@ -33,3 +39,4 @@ class EventResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
