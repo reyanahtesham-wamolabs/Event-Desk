@@ -5,8 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.db import get_db
 from app.services.jwt import TokenFunctionality
 from app.models.user import User
-from app.repositories.user_auth import UserCrud
-
+from app.core.permissions import Permission,ROLE_PERMISSIONS
 security = HTTPBearer()
 
 
@@ -55,3 +54,13 @@ async def get_current_user(
         )
 
     return user
+def require_permission(permission: Permission):
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        allowed = ROLE_PERMISSIONS.get(current_user.role, set())
+        if permission not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission.value}",
+            )
+        return current_user
+    return dependency
