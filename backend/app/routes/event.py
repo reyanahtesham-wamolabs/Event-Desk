@@ -89,7 +89,7 @@ async def cancel_event(
 @router.delete("/{event_id}", status_code=204)
 async def delete_event(
     event_id: str,
-    user: User = Depends(get_current_user),
-    events_service: EventService = Depends(require_permission(Permission.DELETE_EVENT)),
+    user: User = Depends(require_permission(Permission.DELETE_EVENT)),
+    events_service: EventService = Depends(get_event_service),
 ):
     await events_service.delete_event(user, event_id)

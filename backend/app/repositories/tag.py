@@ -29,10 +29,10 @@ class TagRepository():
 
     async def get_or_create_tag(session: AsyncSession, name: str) -> Tag:
         """Idempotent helper — useful when attaching tags to events by name."""
-        tag = await get_tag_by_name(session, name)
+        tag = await TagRepository.get_tag_by_name(session, name)
         if tag:
             return tag
-        return await create_tag(session, name)
+        return await TagRepository.create_tag(session, name)
 
 
     async def list_tags(

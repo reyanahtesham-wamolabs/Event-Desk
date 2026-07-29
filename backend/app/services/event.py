@@ -127,49 +127,13 @@ class EventService:
             limit=limit,
         )
 
-    async def edit_event(
-        self,
-        current_user: User,
-        event_id: str,
-        session=None,
-        **fields,
-    ) -> Event:
-        """
-        Partial update of an event. Only the organizer who owns it, or an admin, may edit.
-        Cancelled or completed events are immutable.
-        """
-        sess = self._get_session(session)
-        event = await self.get_event(event_id, session=sess)
-        self._event_owner(current_user, event)
-
-        if event.status in TERMINAL_STATUSES:
-            raise ValidationError(f"Cannot edit an event that is {event.status.value}")
-
-        fields.pop("organizer_id", None)
-        fields.pop("status", None)
-
-        if "event_time" in fields and fields["event_time"] is not None:
-            self._validate_event_time(fields["event_time"])
-
-        if "total_tickets" in fields and fields["total_tickets"] is not None:
-            new_total = fields["total_tickets"]
-            self._validate_total_tickets(new_total)
-            booked = sum(1 for t in event.tickets if t.status != "cancelled")
-            if new_total < booked:
-                raise ValidationError(
-                    f"Cannot set total_tickets below {booked}, the number already booked"
-                )
-
-        if "title" in fields and fields["title"] is not None:
-            if not fields["title"].strip():
-                raise ValidationError("Title cannot be empty")
-            fields["title"] = fields["title"].strip()
-
         tag_ids = fields.pop("tag_ids", None)
+        if tag_ids is not None:
+            await self._validate_tag_ids(tag_ids, session=sess)
+
         updated = await events_repo.update_event(sess, event_id, **fields)
 
         if tag_ids is not None:
-            await self._validate_tag_ids(tag_ids, session=sess)
             updated = await events_repo.set_event_tags(sess, event_id, tag_ids)
 
         return updated

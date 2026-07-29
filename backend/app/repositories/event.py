@@ -61,11 +61,10 @@ class EventRepository:
         limit: int = 20,
     ) -> list[Event]:
         query = _event_query()
-        # uncomment when testing frontend
-        # if status is not None:
-        #     query = query.where(Event.status == status)
-        # if category is not None:
-        #     query = query.where(Event.category == category)
+        if status is not None:
+            query = query.where(Event.status == status)
+        if category is not None:
+            query = query.where(Event.category == category)
         if organizer_id is not None:
             query = query.where(Event.organizer_id == organizer_id)
         if tag_name is not None:
@@ -81,10 +80,6 @@ class EventRepository:
         event_id: str,
         **fields,
     ) -> Event | None:
-        """
-        Partial update. Pass only the fields you want to change, e.g.
-        update_event(session, event_id, title="New title", status=EventStatus.PUBLISHED)
-        """
         event = await EventRepository.get_event_by_id(session, event_id)
         if not event:
             return None
