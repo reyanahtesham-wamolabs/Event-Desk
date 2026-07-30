@@ -9,7 +9,6 @@ from app.models.user import User
 from app.core.permissions import Permission
 from app.services.event import EventService
 from app.services.ticket import TicketService
-from app.dependencies.services import get_event_service, get_ticket_service
 from app.schemas.event import EventCreate, EventResponse, EventUpdate
 from app.schemas.ticket import (
     TicketCreate,
@@ -18,7 +17,10 @@ from app.schemas.ticket import (
     PurchaseAnyRequest,
     AvailableCountResponse,
 )
-from app.utils.exceptions import NotFoundError, ConflictError
+from app.schemas.review import ReviewCreate, ReviewResponse as ReviewResponse
+from app.services.review import ReviewService
+from app.dependencies.services import get_event_service, get_ticket_service, get_review_service
+from app.utils.exceptions import NotFoundError, ConflictError, ValidationError
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -188,3 +190,30 @@ async def purchase_any_available(
         raise HTTPException(404, str(e))
     except ConflictError as e:
         raise HTTPException(409, str(e))
+
+
+@router.post("/{event_id}/reviews", response_model=ReviewResponse, status_code=201)
+async def create_review(
+    event_id: str,
+    payload: ReviewCreate,
+    user: User = Depends(require_permission(Permission.LEAVE_REVIEW)),
+    review_service: ReviewService = Depends(get_review_service),
+):
+    try:
+        return await review_service.create_review(
+            user, event_id, payload.review, payload.rating
+        )
+    except NotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValidationError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/{event_id}/reviews", response_model=list[ReviewResponse])
+async def list_event_reviews(
+    event_id: str,
+    user: User = Depends(get_current_user),
+    review_service: ReviewService = Depends(get_review_service),
+):
+    return await review_service.list_event_reviews(event_id)
+
