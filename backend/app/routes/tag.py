@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.dependencies.authorization import get_current_user
+from app.core.permissions import Permission
+from app.dependencies.authorization import get_current_user,require_permission
 from app.models.user import User
 from app.services.tag import TagService
 from app.dependencies.services import get_tag_service
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 @router.post("", response_model=TagResponse, status_code=201)
 async def create_tag(
     payload: TagCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.CREATE_TAG)),
     tags_service:TagService=Depends(get_tag_service)
 ):
     return await tags_service.create_tag( user, payload.name)
@@ -39,7 +39,7 @@ async def list_tags(
 async def update_tag(
     tag_id: str,
     payload: TagUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.EDIT_TAG)),
     tags_service:TagService=Depends(get_tag_service)
 ):
     return await tags_service.update_tag(user, tag_id, payload.name)
@@ -48,7 +48,7 @@ async def update_tag(
 @router.delete("/{tag_id}", status_code=204)
 async def delete_tag(
     tag_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(Permission.DELETE_TAG)),
     tags_service:TagService=Depends(get_tag_service)
 ):
     await tags_service.delete_tag(user, tag_id)
