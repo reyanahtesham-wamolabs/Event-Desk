@@ -101,11 +101,9 @@ class EventService:
                 event.id, silver_ticket_count, TicketTier.SILVER, silver_ticket_price
             )
         except Exception:
-            # Explicit compensation on partial failure
             await events_repo.delete_event(sess, event.id)
             raise
 
-        # Reload the event so the newly created tickets are attached
         await sess.refresh(event, attribute_names=["tickets"])
         return event
 

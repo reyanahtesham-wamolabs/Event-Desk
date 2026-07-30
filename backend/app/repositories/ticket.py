@@ -23,6 +23,10 @@ class TicketRepository:
         price: int,
         user_id: str | None = None,
     ) -> Ticket:
+        event = await self.db.get(Event, event_id)
+        if event is None:
+            raise NotFoundError(f"Event '{event_id}' not found")
+
         ticket = Ticket(
             id=str(uuid.uuid4()),
             event_id=event_id,
@@ -31,12 +35,20 @@ class TicketRepository:
             price=price,
             user_id=None,
         )
-        self.db.add(ticket)
+        event.tickets.append(ticket)
         await self.db.commit()
         await self.db.refresh(ticket)
         return ticket
 
     async def bulk_create(self, tickets: list[dict]) -> list[Ticket]:
+        if not tickets:
+            return []
+
+        event_id = tickets[0]["event_id"]
+        event = await self.db.get(Event, event_id)
+        if event is None:
+            raise NotFoundError(f"Event '{event_id}' not found")
+
         objs = [
             Ticket(
                 id=str(uuid.uuid4()),
@@ -49,7 +61,7 @@ class TicketRepository:
             for t in tickets
         ]
         try:
-            self.db.add_all(objs)
+            event.tickets.extend(objs)
             await self.db.commit()
         except Exception:
             await self.db.rollback()
@@ -103,38 +115,20 @@ class TicketRepository:
     async def claim_any_available(
         self, event_id: str, tier: TicketTier, user_id: str
     ) -> Ticket:
-        """
-        Atomically claim any available ticket for a *published* event.
-
-        Lock order:
-          1. Lock the event row with SELECT … FOR UPDATE.
-          2. Verify status is PUBLISHED.
-          3. Lock + claim one available ticket with SELECT … FOR UPDATE SKIP LOCKED.
-
-        cancel_event acquires the same event-row lock (via its UPDATE on the event)
-        before releasing tickets, so claim and cancel are fully serialised.
-        """
         try:
-            # Step 1: Lock the event row so cancel_event cannot interleave.
-            event_stmt = (
-                select(Event)
-                .where(Event.id == event_id)
-                .with_for_update()
-            )
+            event_stmt = select(Event).where(Event.id == event_id).with_for_update()
             event_result = await self.db.execute(event_stmt)
             event = event_result.scalar_one_or_none()
 
             if event is None:
                 raise NotFoundError(f"Event '{event_id}' not found")
 
-            # Step 2: Status check — now authoritative because we hold the lock.
             if event.status != EventStatus.PUBLISHED:
                 raise ConflictError(
                     f"Tickets can only be purchased for published events "
                     f"(current status: {event.status.value})"
                 )
 
-            # Step 3: Claim any unclaimed ticket of the requested tier.
             stmt = (
                 select(Ticket)
                 .where(
@@ -162,20 +156,7 @@ class TicketRepository:
             raise
 
     async def claim_specific(self, ticket_id: str, user_id: str) -> Ticket:
-        """
-        Atomically claim a specific ticket only if it is unclaimed AND its
-        event is currently PUBLISHED.
-
-        Lock order:
-          1. Lock the event row with SELECT … FOR UPDATE.
-          2. Verify status is PUBLISHED.
-          3. UPDATE the ticket row WHERE user_id IS NULL.
-
-        This is the same lock order as claim_any_available and cancel_event,
-        preventing any interleaving that would leave a booking on a cancelled event.
-        """
         try:
-            # Step 1: Resolve event_id from the ticket, then lock the event row.
             ticket_lookup = await self.db.get(Ticket, ticket_id)
             if ticket_lookup is None:
                 raise NotFoundError(f"Ticket {ticket_id} not found")
@@ -188,7 +169,6 @@ class TicketRepository:
             event_result = await self.db.execute(event_stmt)
             event = event_result.scalar_one_or_none()
 
-            # Step 2: Status check — authoritative because we hold the lock.
             if event is None or event.status != EventStatus.PUBLISHED:
                 status_val = event.status.value if event else "unknown"
                 raise ConflictError(
@@ -196,7 +176,6 @@ class TicketRepository:
                     f"(current status: {status_val})"
                 )
 
-            # Step 3: Atomically claim the ticket only if still unclaimed.
             stmt = (
                 update(Ticket)
                 .where(Ticket.id == ticket_id, Ticket.user_id.is_(None))
@@ -214,12 +193,6 @@ class TicketRepository:
             raise
 
     async def release(self, ticket_id: str, owned_by: str) -> Ticket:
-        """
-        Release a ticket back to available, atomically verifying that the
-        requesting user still owns it in the WHERE clause — prevents a race
-        where another user has since claimed the ticket after an event
-        cancellation released it.
-        """
         stmt = (
             update(Ticket)
             .where(Ticket.id == ticket_id, Ticket.user_id == owned_by)
@@ -238,7 +211,6 @@ class TicketRepository:
         return await self.get(ticket_id)
 
     async def release_all_by_event(self, event_id: str, commit: bool = True) -> int:
-        """Release all booked tickets for an event back to available. Returns the number of tickets released."""
         stmt = (
             update(Ticket)
             .where(Ticket.event_id == event_id, Ticket.user_id.isnot(None))

@@ -106,7 +106,6 @@ async def delete_event(
     await events_service.delete_event(user, event_id)
 
 
-# ── Event-scoped Ticket Sub-routes ────────────────────────────────────────────
 
 @router.post("/{event_id}/tickets", response_model=TicketResponse, status_code=201)
 async def create_ticket(
@@ -116,7 +115,6 @@ async def create_ticket(
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     
-    """Add a single ticket to an existing event (organizer/admin only)."""
     return await ticket_service.create_ticket(
         event_id=event_id,
         seat_num=payload.seat_num,

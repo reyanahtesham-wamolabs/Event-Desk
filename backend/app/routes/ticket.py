@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-
+from fastapi import APIRouter, Depends, HTTPException
 from app.models.enum import TicketTier
 from app.services.ticket import TicketService
 from app.schemas.ticket import (

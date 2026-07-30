@@ -62,19 +62,15 @@ class TicketService:
     async def purchase_any_available(
         self, event_id: str, tier: TicketTier, user_id: str
     ):
-        # Event-status check is atomic inside claim_any_available (subquery in SELECT FOR UPDATE)
         return await self.repo.claim_any_available(event_id, tier, user_id)
 
     async def purchase_specific_seat(self, ticket_id: str, user_id: str):
-        # Event-status check is atomic inside claim_specific (subquery in UPDATE WHERE)
         return await self.repo.claim_specific(ticket_id, user_id)
 
     async def cancel_ticket(self, ticket_id: str, user_id: str):
-        # Ownership is verified atomically inside release() via WHERE user_id = owned_by
         return await self.repo.release(ticket_id, owned_by=user_id)
 
     async def release_all_by_event(self, event_id: str, commit: bool = True) -> int:
-        """Release all booked tickets for an event. Called when an event is cancelled."""
         return await self.repo.release_all_by_event(event_id, commit=commit)
 
     async def update_ticket(self, ticket_id: str, **fields):
