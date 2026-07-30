@@ -1,8 +1,9 @@
 from app.models.enum import TicketTier
 from app.repositories.ticket import TicketRepository
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.utils.exceptions import ConflictError, NotFoundError
+from app.models.user import UserRole
+from app.utils.exceptions import ConflictError, NotFoundError, PermissionDeniedError
+from app.repositories.event import EventRepository
 
 
 class TicketService:
@@ -13,26 +14,33 @@ class TicketService:
     async def create_ticket(
         self,
         *,
+        user,
         event_id: str,
         seat_num: int,
         ticket_tier: TicketTier,
         price: int,
     ):
-        return await self.repo.create(
-            event_id=event_id,
-            seat_num=seat_num,
-            ticket_tier=ticket_tier,
-            price=price,
-        )
+        event = await EventRepository.get_event_by_id(self.session,event_id)
+        if event.organizer_id == user.id or user.role == UserRole.ADMIN:
+            return await self.repo.create(
+                event_id=event_id,
+                seat_num=seat_num,
+                ticket_tier=ticket_tier,
+                price=price,
+            )
+        else:
+            raise PermissionDeniedError()
 
     async def create_tickets_bulk(
-        self, event_id: str, ticket_count: int, tier: TicketTier, ticket_price: int
+        self, user, event, ticket_count: int, tier: TicketTier, ticket_price: int
     ):
+        if user.id != event.organizer_id and user.role != UserRole.ADMIN:
+            raise PermissionDeniedError()
         ticket_list = []
         for i in range(ticket_count):
             ticket_list.append(
                 {
-                    "event_id": event_id,
+                    "event_id": event.id,
                     "seat_num": i,
                     "ticket_tier": tier,
                     "price": ticket_price,
@@ -73,9 +81,16 @@ class TicketService:
     async def release_all_by_event(self, event_id: str, commit: bool = True) -> int:
         return await self.repo.release_all_by_event(event_id, commit=commit)
 
-    async def update_ticket(self, ticket_id: str, **fields):
-        fields.pop("user_id", None)
-        return await self.repo.update(ticket_id, **fields)
+    async def update_ticket(self, user, ticket_id: str, **fields):
+        ticket = self.repo.get(ticket_id)
+        if ticket.user_id == user.id or user.role == UserRole.ADMIN:
+            return await self.repo.update(ticket_id, **fields)
+        else:
+            PermissionDeniedError("You cannot update this ticket")
 
-    async def delete_ticket(self, ticket_id: str):
-        await self.repo.delete(ticket_id)
+    async def delete_ticket(self, user, ticket_id: str):
+        ticket = self.repo.get(ticket_id)
+        if ticket.user_id == user.id or user.role == UserRole.ADMIN:
+            return await self.repo.delete(ticket_id)
+        else:
+            PermissionDeniedError("You cannot update this ticket")

@@ -71,7 +71,7 @@ async def update_ticket(
 ):
     try:
         fields = payload.model_dump(exclude_unset=True)
-        return await ticket_service.update_ticket(ticket_id, **fields)
+        return await ticket_service.update_ticket(user,ticket_id, **fields)
     except NotFoundError as e:
         raise HTTPException(404, str(e))
 
@@ -83,6 +83,6 @@ async def delete_ticket(
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     try:
-        await ticket_service.delete_ticket(ticket_id)
+        await ticket_service.delete_ticket(user,ticket_id)
     except NotFoundError as e:
         raise HTTPException(404, str(e))

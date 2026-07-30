@@ -92,13 +92,13 @@ class EventService:
 
         try:
             await self.ticket_service.create_tickets_bulk(
-                event.id, gold_ticket_count, TicketTier.GOLD, gold_ticket_price
+                current_user,event, gold_ticket_count, TicketTier.GOLD, gold_ticket_price
             )
             await self.ticket_service.create_tickets_bulk(
-                event.id, bronze_ticket_count, TicketTier.BRONZE, bronze_ticket_price
+                current_user,event, bronze_ticket_count, TicketTier.BRONZE, bronze_ticket_price
             )
             await self.ticket_service.create_tickets_bulk(
-                event.id, silver_ticket_count, TicketTier.SILVER, silver_ticket_price
+                current_user,event, silver_ticket_count, TicketTier.SILVER, silver_ticket_price
             )
         except Exception:
             await events_repo.delete_event(sess, event.id)
@@ -107,14 +107,13 @@ class EventService:
         await sess.refresh(event, attribute_names=["tickets"])
         return event
 
-    async def get_event(self, event_id: str, current_user: User | None = None, session=None) -> Event:
+    async def get_event(self, event_id: str, current_user: User, session=None) -> Event:
         sess = self._get_session(session)
         event = await events_repo.get_event_by_id(sess, event_id)
         if not event:
             raise NotFoundError(f"Event '{event_id}' not found")
             
         if event.status != EventStatus.PUBLISHED:
-            # If not published, only the organizer or an admin can see it.
             if not current_user or (current_user.role != Role.ADMIN and event.organizer_id != current_user.id):
                 raise NotFoundError(f"Event '{event_id}' not found")
                 

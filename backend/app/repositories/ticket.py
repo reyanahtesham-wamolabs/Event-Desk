@@ -61,7 +61,6 @@ class TicketRepository:
             for t in tickets
         ]
         try:
-            event.tickets.extend(objs)
             await self.db.commit()
         except Exception:
             await self.db.rollback()

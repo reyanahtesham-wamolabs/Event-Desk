@@ -65,7 +65,7 @@ async def get_event(
     user: User = Depends(get_current_user),
     events_service: EventService = Depends(get_event_service),
 ):
-    return await events_service.get_event(event_id)
+    return await events_service.get_event(event_id,user)
 
 
 @router.patch("/{event_id}", response_model=EventResponse)
@@ -116,6 +116,7 @@ async def create_ticket(
 ):
     
     return await ticket_service.create_ticket(
+        user=user,
         event_id=event_id,
         seat_num=payload.seat_num,
         ticket_tier=payload.ticket_tier,
@@ -133,6 +134,7 @@ async def create_tickets_bulk(
     tickets = []
     for t in payload.tickets:
         ticket = await ticket_service.create_ticket(
+            user=user,
             event_id=event_id,
             seat_num=t.seat_num,
             ticket_tier=t.ticket_tier,

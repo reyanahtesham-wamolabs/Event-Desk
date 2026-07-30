@@ -8,6 +8,6 @@ from .database import Base
 
 
 class TicketTier(str, enum.Enum):
-    GOLD="gold",
-    SILVER="silver",
+    GOLD="gold"
+    SILVER="silver"
     BRONZE="bronze"
