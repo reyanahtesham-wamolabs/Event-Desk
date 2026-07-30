@@ -8,8 +8,18 @@ from app.routes.review import router as review_router
 from app.routes.notification import router as notification_router
 from starlette.responses import JSONResponse
 from app.utils.exceptions import AppException
+from contextlib import asynccontextmanager
+from app.core.scheduler import scheduler
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start the scheduler
+    scheduler.start()
+    yield
+    # Shutdown: Stop the scheduler
+    scheduler.shutdown()
+
+app = FastAPI(lifespan=lifespan)
 
 app.include_router(auth_router)
 app.include_router(user_router)

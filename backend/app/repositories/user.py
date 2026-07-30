@@ -24,3 +24,10 @@ class UserRepository:
         await self.session.refresh(user)
         return user
 
+    async def get_users_by_names(self, names: list[str]) -> list[User]:
+        if not names:
+            return []
+        stmt = select(User).where(User.name.in_(names))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+

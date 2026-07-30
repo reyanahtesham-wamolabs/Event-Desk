@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.models.enum import TicketTier
 from app.services.ticket import TicketService
 from app.schemas.ticket import (
@@ -11,7 +11,7 @@ from app.models.user import User
 from app.dependencies.services import get_ticket_service
 from app.utils.exceptions import NotFoundError, ConflictError
 from app.models.notification import NotificationType
-from app.utils.notification_tasks import send_notification
+from app.core.scheduler import schedule_notification
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -39,14 +39,12 @@ async def get_ticket(
 @router.post("/{ticket_id}/purchase", response_model=TicketResponse)
 async def purchase_specific_seat(
     ticket_id: str,
-    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     try:
         ticket = await ticket_service.purchase_specific_seat(ticket_id, user.id)
-        background_tasks.add_task(
-            send_notification,
+        schedule_notification(
             user_id=user.id,
             notification_type=NotificationType.TICKET_CONFIRMATION,
             message=f"Your booking for ticket {ticket.id} has been confirmed.",
