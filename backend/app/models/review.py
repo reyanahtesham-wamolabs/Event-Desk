@@ -17,4 +17,13 @@ class Review(Base):
     
     user: Mapped["User | None"] = relationship(back_populates="reviews")
     event: Mapped["Event"] = relationship(back_populates="reviews")
-    reply: Mapped["Review | None"] = relationship(remote_side=[id], backref="replies")
+    reply: Mapped["Review | None"] = relationship(
+        "Review",
+        remote_side=[id],
+        back_populates="replies",
+    )
+
+    replies: Mapped[list["Review"]] = relationship(
+        "Review",
+        back_populates="reply",
+    )
