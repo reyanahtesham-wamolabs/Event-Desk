@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.utils.exceptions import NotFoundError,ConflictError
 from ..models import Tag
 
 class TagRepository():
@@ -13,7 +13,7 @@ class TagRepository():
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            raise ValueError(f"Tag '{name}' already exists")
+            raise ConflictError(f"Tag '{name}' already exists")
         await session.refresh(tag)
         return tag
 
@@ -57,7 +57,7 @@ class TagRepository():
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            raise ValueError(f"Tag '{name}' already exists")
+            raise ConflictError(f"Tag '{name}' already exists")
         await session.refresh(tag)
         return tag
 

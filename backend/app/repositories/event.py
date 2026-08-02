@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
+from app.utils.exceptions import NotFoundError
 from app.models.event import Event, EventCategory, EventStatus, Tag
 
 
@@ -86,7 +86,7 @@ class EventRepository:
 
         for key, value in fields.items():
             if not hasattr(event, key):
-                raise ValueError(f"Event has no field '{key}'")
+                raise NotFoundError(f"Event has no field '{key}'")
             setattr(event, key, value)
 
         await session.commit()
@@ -128,7 +128,7 @@ class EventRepository:
 
         tag = await session.get(Tag, tag_id)
         if not tag:
-            raise ValueError(f"Tag '{tag_id}' not found")
+            raise NotFoundError(f"Tag '{tag_id}' not found")
 
         if tag not in event.tags:
             event.tags.append(tag)
