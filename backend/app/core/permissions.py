@@ -13,6 +13,11 @@ class Permission(str, Enum):
     EDIT_EVENT = "edit_event"
     CANCEL_EVENT = "cancel_event"
     VIEW_PUBLISHED_EVENTS = "view_published_events"
+    DELETE_EVENT="delete_event"
+
+    CREATE_TAG="create_tag"
+    EDIT_TAG="edit_tag"
+    DELETE_TAG="delete_tag"
 
     BOOK_TICKET = "book_ticket"
     CANCEL_BOOKING = "cancel_booking"
@@ -40,6 +45,8 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.REPLY_TO_REVIEW,#only own
         Permission.EDIT_OWN_REVIEW,
         Permission.VIEW_OWN_NOTIFICATIONS,
+        Permission.EDIT_TAG,#only own
+        Permission.CREATE_TAG,                        
     },
     UserRole.ATTENDEE: {
         Permission.UPDATE_OWN_PROFILE,

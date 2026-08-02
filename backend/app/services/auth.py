@@ -21,7 +21,11 @@ class UserAuthenticationServices:
 
     async def user_signup(self, user_data: UserCreate, session=None):
         sess = self._get_session(session)
-
+        if user_data.role=="admin":
+            raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin cannot be created",
+                )
         existing = await UserCrud.get_user_by_email(user_data.email, sess)
         if existing is not None:
             raise HTTPException(
@@ -37,6 +41,7 @@ class UserAuthenticationServices:
                 email=user_data.email,
                 password_hash=hashed_pw,
                 session=sess,
+                role=user_data.role,
             )
         except SQLAlchemyError as e:
             raise HTTPException(

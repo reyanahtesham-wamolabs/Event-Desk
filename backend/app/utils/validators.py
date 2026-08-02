@@ -1,7 +1,7 @@
 from pydantic import AfterValidator
 from typing import Annotated
 import re
-
+from datetime import UTC,datetime
 EMAIL_REGEX = re.compile(
     r"^[a-zA-Z][a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
 )
@@ -30,7 +30,13 @@ def check_non_empty_value(value: str) -> str:
     if not value.strip():
         raise ValueError("Cannot accept empty string")
     return value
+def validate_event_time(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("event_time must include a timezone offset")
+
+    return value.astimezone(UTC)
 
 email_value=Annotated[str,AfterValidator(check_email)]
 password_value=Annotated[str,AfterValidator(validate_password)]
 non_empty_value=Annotated[str,AfterValidator(check_non_empty_value)]
+datetime_with_timezone=Annotated[datetime,AfterValidator(validate_event_time)]
