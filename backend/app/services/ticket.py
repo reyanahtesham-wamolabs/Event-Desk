@@ -89,7 +89,7 @@ class TicketService:
             PermissionDeniedError("You cannot update this ticket")
 
     async def delete_ticket(self, user, ticket_id: str):
-        ticket = self.repo.get(ticket_id)
+        ticket = await self.repo.get(ticket_id)
         if ticket.user_id == user.id or user.role == UserRole.ADMIN:
             return await self.repo.delete(ticket_id)
         else:
