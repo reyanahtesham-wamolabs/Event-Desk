@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app.core.permissions import Permission
 from app.dependencies.authorization import get_current_user, require_permission
@@ -7,6 +7,8 @@ from app.models.user import User
 from app.schemas.review import ReviewResponse, ReviewUpdate, ReviewReply
 from app.services.review import ReviewService
 from app.utils.exceptions import NotFoundError, PermissionDeniedError
+from app.models.notification import NotificationType
+from app.utils.notification_tasks import send_notification
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -65,11 +67,24 @@ async def delete_review(
 async def reply_to_review(
     review_id: str,
     payload: ReviewReply,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission(Permission.REPLY_TO_REVIEW)),
     review_service: ReviewService = Depends(get_review_service),
 ):
     try:
-        return await review_service.reply_to_review(user, review_id, payload.review)
+        # Get the parent review to find the original author
+        parent_review = await review_service.get_review(review_id)
+        reply = await review_service.reply_to_review(user, review_id, payload.review)
+        # Notify the original review author in the background
+        if parent_review.user_id and parent_review.user_id != user.id:
+            background_tasks.add_task(
+                send_notification,
+                user_id=parent_review.user_id,
+                notification_type=NotificationType.REVIEW_REPLY,
+                message="Your review received a reply.",
+                event_id=parent_review.event_id,
+            )
+        return reply
     except NotFoundError as e:
         raise HTTPException(404, str(e))
     except PermissionDeniedError as e:
