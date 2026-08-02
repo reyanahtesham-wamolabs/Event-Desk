@@ -13,6 +13,7 @@ class NotificationType(str, enum.Enum):
     EVENT_CANCELLED = "event_cancelled"
     TICKET_CONFIRMATION = "ticket_confirmation"
     REVIEW_REPLY = "review_reply"
+    REVIEW_MENTION = "review_mention"
 
 
 class Notification(Base):
