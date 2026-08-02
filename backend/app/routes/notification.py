@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-
 from app.core.permissions import Permission
 from app.dependencies.authorization import require_permission
 from app.dependencies.services import get_notification_service
@@ -11,7 +10,6 @@ from app.utils.exceptions import NotFoundError, PermissionDeniedError
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-
 @router.get("/my-notifications", response_model=list[NotificationResponse])
 async def list_my_notifications(
     type: NotificationType | None = Query(default=None),
@@ -21,7 +19,6 @@ async def list_my_notifications(
     return await notification_service.list_my_notifications(
         user.id, notification_type=type
     )
-
 
 @router.get("/{notification_id}", response_model=NotificationResponse)
 async def get_notification(
@@ -36,7 +33,6 @@ async def get_notification(
     except PermissionDeniedError as e:
         raise HTTPException(403, str(e))
 
-
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
 async def mark_as_read(
     notification_id: str,
@@ -49,7 +45,6 @@ async def mark_as_read(
         raise HTTPException(404, str(e))
     except PermissionDeniedError as e:
         raise HTTPException(403, str(e))
-
 
 @router.patch("/{notification_id}/unread", response_model=NotificationResponse)
 async def mark_as_unread(
@@ -64,7 +59,6 @@ async def mark_as_unread(
     except PermissionDeniedError as e:
         raise HTTPException(403, str(e))
 
-
 @router.delete("/{notification_id}", status_code=204)
 async def delete_notification(
     notification_id: str,
@@ -77,7 +71,6 @@ async def delete_notification(
         raise HTTPException(404, str(e))
     except PermissionDeniedError as e:
         raise HTTPException(403, str(e))
-
 
 @router.delete("", status_code=204)
 async def clear_my_notifications(

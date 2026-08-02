@@ -1,11 +1,15 @@
 from datetime import datetime
+import re
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.dependencies.db import get_db
 
 from app.dependencies.authorization import get_current_user, require_permission
 from app.models.event import EventCategory, EventStatus
 from app.models.enum import TicketTier
 from app.models.user import User
+from app.repositories.user import UserRepository
 from app.core.permissions import Permission
 from app.services.event import EventService
 from app.services.ticket import TicketService
@@ -22,7 +26,7 @@ from app.services.review import ReviewService
 from app.dependencies.services import get_event_service, get_ticket_service, get_review_service
 from app.utils.exceptions import NotFoundError, ConflictError, ValidationError
 from app.models.notification import NotificationType
-from app.utils.notification_tasks import send_notification, send_bulk_notifications
+from app.core.scheduler import schedule_notification, schedule_bulk_notifications
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -95,7 +99,6 @@ async def publish_event(
 @router.post("/{event_id}/cancel", response_model=EventResponse)
 async def cancel_event(
     event_id: str,
-    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission(Permission.CANCEL_EVENT)),
     events_service: EventService = Depends(get_event_service),
     ticket_service: TicketService = Depends(get_ticket_service),
@@ -114,7 +117,7 @@ async def cancel_event(
             }
             for uid in holder_ids
         ]
-        background_tasks.add_task(send_bulk_notifications, notifications)
+        schedule_bulk_notifications(notifications)
     return event
 
 
@@ -200,14 +203,12 @@ async def available_count(
 async def purchase_any_available(
     event_id: str,
     payload: PurchaseAnyRequest,
-    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission(Permission.BOOK_TICKET)),
     ticket_service: TicketService = Depends(get_ticket_service),
 ):
     try:
         ticket = await ticket_service.purchase_any_available(event_id, payload.tier, user.id)
-        background_tasks.add_task(
-            send_notification,
+        schedule_notification(
             user_id=user.id,
             notification_type=NotificationType.TICKET_CONFIRMATION,
             message=f"Your booking for ticket {ticket.id} has been confirmed.",
@@ -224,10 +225,10 @@ async def purchase_any_available(
 async def create_review(
     event_id: str,
     payload: ReviewCreate,
-    background_tasks: BackgroundTasks,
     user: User = Depends(require_permission(Permission.LEAVE_REVIEW)),
     review_service: ReviewService = Depends(get_review_service),
     events_service: EventService = Depends(get_event_service),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
         review = await review_service.create_review(
@@ -236,13 +237,32 @@ async def create_review(
         # Notify event organizer about the new review
         event = await events_service.get_event(event_id, user)
         if event.organizer_id and event.organizer_id != user.id:
-            background_tasks.add_task(
-                send_notification,
+            schedule_notification(
                 user_id=event.organizer_id,
                 notification_type=NotificationType.EVENT_UPDATE,
                 message=f"Your event '{event.title}' received a new review.",
                 event_id=event_id,
             )
+            
+        # Extract mentions and notify users
+        mentioned_names = list(set(re.findall(r"@(\w+)", payload.review)))
+        if mentioned_names:
+            user_repo = UserRepository(db)
+            mentioned_users = await user_repo.get_users_by_names(mentioned_names)
+            mentioned_ids = {u.id for u in mentioned_users if u.id != user.id}
+            
+            if mentioned_ids:
+                mentions = [
+                    {
+                        "user_id": uid,
+                        "type": NotificationType.REVIEW_MENTION,
+                        "message": f"{user.name} mentioned you in a review for '{event.title}'.",
+                        "event_id": event_id,
+                    }
+                    for uid in mentioned_ids
+                ]
+                schedule_bulk_notifications(mentions)
+                
         return review
     except NotFoundError as e:
         raise HTTPException(404, str(e))

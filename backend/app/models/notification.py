@@ -7,6 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class NotificationType(str, enum.Enum):
+    EVENT_REMINDER = "event_reminder"
+    EVENT_UPDATE = "event_update"
+    EVENT_CANCELLED = "event_cancelled"
+    TICKET_CONFIRMATION = "ticket_confirmation"
+    REVIEW_REPLY = "review_reply"
+    REVIEW_MENTION = "review_mention"
+
 
 class Notification(Base):
     __tablename__ = "notifications"

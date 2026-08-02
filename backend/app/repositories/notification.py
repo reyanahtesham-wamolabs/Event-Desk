@@ -1,12 +1,9 @@
 import uuid
 from typing import Sequence
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.notification import Notification, NotificationType
 from app.utils.exceptions import NotFoundError
-
 
 class NotificationRepository:
     def __init__(self, db: AsyncSession):

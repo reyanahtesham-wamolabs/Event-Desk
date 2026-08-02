@@ -24,3 +24,6 @@ def get_review_service(db=Depends(get_db)) -> ReviewService:
 def get_notification_service(db=Depends(get_db)) -> NotificationService:
     return NotificationService(db_session=db)
 
+def get_notification_service(db=Depends(get_db)) -> NotificationService:
+    return NotificationService(db_session=db)
+
