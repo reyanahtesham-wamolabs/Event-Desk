@@ -6,6 +6,7 @@ class UserCreate(BaseModel):
     name: str
     email: email_value
     password: password_value
+    role:UserRole
 
 
 class UserLogin(BaseModel):

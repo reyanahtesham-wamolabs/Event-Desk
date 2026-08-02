@@ -2,8 +2,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User as db_User
-
+from app.models.user import User as db_User,UserRole
 
 class UserCrud:
     @staticmethod
@@ -11,9 +10,10 @@ class UserCrud:
         name: str,
         email: str,
         password_hash: str,
+        role:UserRole,
         session: AsyncSession,
     ) -> db_User:
-        user = db_User(name=name, email=email, password_hash=password_hash)
+        user = db_User(name=name, email=email, password_hash=password_hash,role=role)
         try:
             session.add(user)
             await session.commit()
